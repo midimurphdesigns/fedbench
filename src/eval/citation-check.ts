@@ -72,7 +72,10 @@ export function extractKeyTokens(answer: string): string[] {
   const tokens = new Set<string>();
   const dollarRe = /\$[\d,]+(?:\.\d+)?/g;
   const periodRe = /\b\d+(?:[-\s]?\d+)?\s*(?:days?|months?|years?|weeks?)\b/gi;
-  const percentRe = /\b\d+(?:\.\d+)?\s*(?:%|percent)\b/gi;
+  // No trailing \b: "10%" ends in a non-word char, and \b after a
+  // non-word char would require a word char immediately after — which
+  // fails for "10%" at end-of-string or before punctuation.
+  const percentRe = /\b\d+(?:\.\d+)?\s*(?:%|percent\b)/gi;
   const acronymRe = /\b[A-Z][A-Z0-9]{2,}(?:-[A-Z0-9]+)*\b/g;
 
   for (const m of answer.matchAll(dollarRe)) tokens.add(m[0]);

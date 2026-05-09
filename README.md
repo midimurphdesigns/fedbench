@@ -78,7 +78,7 @@ Project docs live in [`docs/`](./docs):
 
 ## Project status
 
-End-to-end eval pipeline is working. The agent retrieves chunks via BM25, prompts Claude Sonnet 4.6 with the evidence and strict citation rules, and produces grounded answers. The harness scores those answers through two layers: deterministic citation-existence checks against the parsed corpus, and Claude Opus 4.7 as the LLM-as-judge for citation faithfulness. Refusal discipline is checked separately on out-of-corpus questions.
+End-to-end eval pipeline is working. The agent retrieves chunks via BM25, prompts Claude through a fallback ladder (Sonnet 4.6 primary → Haiku 4.5 fallback) with strict citation rules, and produces grounded answers. The harness scores those answers through two layers: deterministic citation-existence checks against the parsed corpus, and Claude Opus 4.7 as the LLM-as-judge for citation faithfulness. Refusal discipline is checked separately on out-of-corpus questions.
 
 Current measurements against the v0.1 eval set (11 pairs: 8 in-corpus + 3 out-of-corpus):
 
@@ -86,7 +86,11 @@ Current measurements against the v0.1 eval set (11 pairs: 8 in-corpus + 3 out-of
 - **Citation faithfulness:** 6 faithful + 2 partially-faithful (judge flagged minor omitted qualifiers) + 0 unfaithful
 - **Refusal discipline:** 3/3 OOC questions correctly refused; 0/8 false refusals on in-corpus questions
 - **Cost:** ~$0.029 per pair end-to-end (agent ~$0.010 + judge ~$0.019)
-- **Latency:** agent p50 2.1s, p95 3.5s
+- **Latency:** agent p50 1.9s, p95 3.9s
+
+The agent reports which fallback rung produced each answer, with full provenance for any earlier rungs that failed. CI runs typecheck and unit tests on every push (44 tests, ~177ms). The full eval suite is runnable locally and on manual workflow_dispatch.
+
+Known limits: the third fallback rung (open-weights via OpenRouter) is documented in [`docs/DESIGN_NOTES.md`](./docs/DESIGN_NOTES.md) but not yet wired (v0.3). The judge currently flags "partially-faithful" for cases where the agent's stated facts are correct but it omitted a hedging qualifier ("most people pay" / "may pay"); a future judge prompt should distinguish "wrong fact" from "omitted hedge" and weight them differently.
 
 See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the full module breakdown.
 

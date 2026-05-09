@@ -56,14 +56,40 @@ Phoenix already has a perfectly good dashboard for traces and span inspection. B
 
 CLI output is structured (JSON, machine-readable). If a user wants visualization, they pipe the output into Phoenix or any other tool that consumes structured eval data.
 
-## Why hand-written ground truth, not LLM-generated
-
-LLM-generated ground truth contaminates the eval loop. If an LLM writes the "correct" answer, then another LLM is being scored against an LLM's output — not against the document. Drift in either model gets attributed to drift in the system; failure modes that affect both models cancel out invisibly.
-
-Hand-written ground truth is tedious. It's also the only way the eval produces signal that's independent of any model. If 50 hand-written questions take 8 hours to write and verify, that's an 8-hour investment in objective ground truth — small compared to the months of engineering that depend on it.
-
 ## Why Bun
 
 The project needs a fast iteration loop. Bun's native TypeScript support eliminates the transpile step; its bundled package manager is faster than npm/pnpm; its bundled test runner removes a Jest/Vitest dependency. For a project that's primarily script-shaped (eval runs, corpus fetchers, smoke tests), Bun's reduced ceremony pays back the choice almost immediately.
 
 Bun's tradeoffs (smaller ecosystem, fewer obscure-package compatibility guarantees) are negligible here because the dependency graph is small and well-known.
+
+## Why BM25 over embeddings (for now)
+
+Retrieval is the part of a RAG pipeline most people reach for embeddings on. We chose BM25 instead, deliberately:
+
+1. **Domain match.** BM25 ranks by literal term overlap, weighted by inverse document frequency. Caseworker queries are short, factual, and dominated by domain vocabulary ("Part B premium", "10 days", "8-month period"). Those queries' relevance signal IS the literal terms, which is exactly what BM25 optimizes for. Embeddings shine on paraphrase-heavy or cross-lingual workloads; benefits-policy queries are neither.
+
+2. **Self-hostable.** BM25 has zero infrastructure dependencies. No embedding API, no vector DB, no async indexing pipeline. The "fork it and run it" property of the harness stays intact.
+
+3. **Defensible default.** When the benchmark harness's job is to measure agent quality, the retrieval layer should be a known, well-understood baseline. BM25 is the standard reference; if dense retrieval beats it, that's measurable and worth doing. Starting with embeddings would mask whether the agent or the retrieval is the failure point.
+
+If real measurements show BM25 hurting end-to-end accuracy on this corpus, the cleanest upgrade is hybrid retrieval (BM25 + a re-ranker on top, or BM25 + dense fusion). That's a v0.2 item, surfaced by the eval, not assumed up front.
+
+## Why a fallback ladder, not a single model
+
+Production AI deployments need a degradation path. The primary model can rate-limit, error, or simply be slow on a given call. A harness with no fallback is a single point of failure pretending to be a measurement.
+
+The ladder encodes the degradation path explicitly:
+
+- **Rung 1 (primary):** Sonnet 4.6. Strongest grounded-Q&A behavior at moderate cost.
+- **Rung 2 (fallback):** Haiku 4.5. ~5x cheaper, ~2x faster, lower quality. Acceptable on questions with clear retrieved evidence; flag for sample-audit on close calls.
+- **Rung 3 (last resort):** open-weights via OpenRouter. Network-dependent, model-quality-dependent. Stubbed in the spec; not yet implemented because it requires an OpenAI-compatible client setup that adds dependencies. Tracked as a v0.3 item.
+
+The cascade rule is conservative: only true provider-side failures (429, 5xx, network) trigger a rung change. 4xx client errors (other than 429) signal a bug in the harness, not a provider problem, and stop the ladder so the bug isn't masked.
+
+The agent reports which rung answered + any earlier rungs that failed. This provenance is structured: a future analysis can correlate "answers that came from Haiku because Sonnet rate-limited" against eval verdicts and detect whether the fallback rung is degrading quality measurably.
+
+## Why no LLM-generated ground truth
+
+LLM-generated ground truth contaminates the eval loop. If an LLM writes the "correct" answer, then another LLM is being scored against an LLM's output — not against the document. Drift in either model gets attributed to drift in the system; failure modes that affect both models cancel out invisibly.
+
+Production reality is that ground truth comes from the customer's domain experts (caseworkers, paralegals, claims adjusters), not from the engineer. The engineer's job is to build the harness that consumes their ground truth, not author it. The contributing rule for fedbench mirrors that: provenance on every pair (`verifiedBy: "domain-expert" | "author@source-pdf" | "sample-audit" | "methodology-review"`), and the layered eval (deterministic citation check + LLM-as-judge) catches drift in the ground truth itself on every run. A wrong page number in the ground truth fails loud the first time the eval runs.

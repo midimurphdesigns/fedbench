@@ -14,10 +14,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { search, type RetrievalResult } from "../retrieval/bm25.ts";
-
-const AGENT_MODEL = "claude-sonnet-4-6";
-const AGENT_INPUT_USD_PER_MTOK = 3;
-const AGENT_OUTPUT_USD_PER_MTOK = 15;
+import { callLadder } from "./fallback-ladder.ts";
 
 const SYSTEM_PROMPT = `
 You are a benefits-policy assistant grounded in a fixed set of public
@@ -47,6 +44,11 @@ export type AgentAnswer = {
   costUSD: number;
   latencyMs: number;
   model: string;
+  // Provenance for the fallback ladder. `rungName` records which rung
+  // produced this answer (primary, fallback, ...). `ladderAttempts`
+  // captures any earlier rungs that failed before this one succeeded.
+  rungName: string;
+  ladderAttempts: { rung: string; error: string }[];
 };
 
 let _client: Anthropic | null = null;
@@ -65,11 +67,11 @@ const REFUSAL_PATTERNS = [
   /\bI don'?t have (that )?information\b/i,
 ];
 
-function detectRefusal(text: string): boolean {
+export function detectRefusal(text: string): boolean {
   return REFUSAL_PATTERNS.some((p) => p.test(text));
 }
 
-function parseCitation(text: string): { document: string; page: number } | null {
+export function parseCitation(text: string): { document: string; page: number } | null {
   // Match [cite: <doc>, page <N>]  — tolerant of spacing, capitalization,
   // and the dash variants the model occasionally emits.
   const re = /\[cite:\s*([a-z0-9_\-]+)\s*,\s*page\s+(\d+)\s*\]/i;
@@ -105,23 +107,23 @@ export async function answerQuestion(
       retrievedChunks: [],
       costUSD: 0,
       latencyMs: 0,
-      model: AGENT_MODEL,
+      model: "no-call",
+      rungName: "skipped",
+      ladderAttempts: [],
     };
   }
 
   const evidence = formatEvidence(retrieved);
   const userMessage = `EVIDENCE:\n\n${evidence}\n\n---\n\nQUESTION: ${question}`;
 
-  const startedAt = Date.now();
-  const response = await client().messages.create({
-    model: AGENT_MODEL,
-    max_tokens: 600,
-    system: SYSTEM_PROMPT,
-    messages: [{ role: "user", content: userMessage }],
+  const ladderResult = await callLadder({
+    client: client(),
+    systemPrompt: SYSTEM_PROMPT,
+    userMessage,
+    maxTokens: 600,
   });
-  const latencyMs = Date.now() - startedAt;
 
-  const text = response.content
+  const text = ladderResult.rawResponse.content
     .filter((b) => b.type === "text")
     .map((b) => b.text)
     .join("")
@@ -130,17 +132,16 @@ export async function answerQuestion(
   const refused = detectRefusal(text);
   const claimedCitation = refused ? null : parseCitation(text);
 
-  const inputCost = (response.usage.input_tokens / 1_000_000) * AGENT_INPUT_USD_PER_MTOK;
-  const outputCost = (response.usage.output_tokens / 1_000_000) * AGENT_OUTPUT_USD_PER_MTOK;
-
   return {
     question,
     answer: text,
     claimedCitation,
     refused,
     retrievedChunks: retrieved,
-    costUSD: inputCost + outputCost,
-    latencyMs,
-    model: response.model,
+    costUSD: ladderResult.costUSD,
+    latencyMs: ladderResult.latencyMs,
+    model: ladderResult.rawResponse.model,
+    rungName: ladderResult.rung.name,
+    ladderAttempts: ladderResult.attempts,
   };
 }

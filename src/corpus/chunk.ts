@@ -38,6 +38,12 @@ const CHUNKS_PATH = resolve(CACHE_DIR, "chunks.jsonl");
 
 const TARGET_WORDS_PER_CHUNK = 600;
 
+// Pages that produce a chunk shorter than this are dropped. Real
+// content pages always exceed it; pages that fall under tend to be
+// title pages, "Notes" pages, or boilerplate that pollutes retrieval
+// without adding any answerable signal.
+const MIN_CHUNK_WORDS = 5;
+
 function chunkPageText(text: string): string[] {
   const cleaned = text.replace(/\s+/g, " ").trim();
   if (cleaned.length === 0) return [];
@@ -108,7 +114,9 @@ export function buildChunks(): Chunk[] {
     const pages = loadParsedDocument(docId);
     if (!pages) continue;
     for (const [pageNum, pageText] of pages) {
-      const pageChunks = chunkPageText(pageText);
+      const pageChunks = chunkPageText(pageText).filter(
+        (text) => text.split(" ").length >= MIN_CHUNK_WORDS,
+      );
       pageChunks.forEach((text, idx) => {
         chunks.push({
           chunkId: `${docId}#p${pageNum}c${idx}`,
