@@ -15,25 +15,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { search, type RetrievalResult } from "../retrieval/bm25.ts";
 import { callLadder } from "./fallback-ladder.ts";
-
-const SYSTEM_PROMPT = `
-You are a benefits-policy assistant grounded in a fixed set of public
-federal Medicare publications. Your only job is to answer the user's
-question using the EVIDENCE chunks provided. You do not use any
-information outside the EVIDENCE.
-
-For every answer:
-  1. State the answer directly. Do not preface with "according to the document" or similar.
-  2. Cite the source document and page in this exact format at the end of your answer:
-     [cite: <document-id>, page <N>]
-     where <document-id> is one of the document IDs in the EVIDENCE
-     headers and <N> is the page number from that header.
-  3. If the answer is NOT in the EVIDENCE, do not guess. Respond with
-     exactly: "I don't see that in the document." (no citation)
-
-Output only the answer + citation (or the refusal). No reasoning, no
-disclaimers, no "I hope this helps."
-`.trim();
+import { buildSystemPrompt, MEDICARE_DOMAIN, type DomainConfig } from "./domain.ts";
 
 export type AgentAnswer = {
   question: string;
@@ -91,9 +73,10 @@ function formatEvidence(results: RetrievalResult[]): string {
 
 export async function answerQuestion(
   question: string,
-  options: { topK?: number } = {},
+  options: { topK?: number; domain?: DomainConfig } = {},
 ): Promise<AgentAnswer> {
   const topK = options.topK ?? 5;
+  const domain = options.domain ?? MEDICARE_DOMAIN;
   const retrieved = search(question, topK);
 
   if (retrieved.length === 0) {
@@ -118,7 +101,7 @@ export async function answerQuestion(
 
   const ladderResult = await callLadder({
     client: client(),
-    systemPrompt: SYSTEM_PROMPT,
+    systemPrompt: buildSystemPrompt(domain),
     userMessage,
     maxTokens: 600,
   });
