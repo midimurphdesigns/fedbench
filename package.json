@@ -1,0 +1,45 @@
+{
+  "name": "fedbench",
+  "version": "0.0.1",
+  "description": "Evaluation harness for grounded LLM Q&A over federal-policy PDFs. Built to make caseworker-style document agents not hallucinate.",
+  "type": "module",
+  "module": "src/index.ts",
+  "license": "MIT",
+  "author": "Kevin Murphy <kmurphywebdev@gmail.com> (https://kevinmurphywebdev.com)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/midimurphdesigns/fedbench.git"
+  },
+  "homepage": "https://github.com/midimurphdesigns/fedbench#readme",
+  "bugs": {
+    "url": "https://github.com/midimurphdesigns/fedbench/issues"
+  },
+  "keywords": [
+    "llm",
+    "evaluation",
+    "rag",
+    "agents",
+    "anthropic",
+    "claude",
+    "openai",
+    "promptfoo",
+    "observability",
+    "document-qa",
+    "federal-policy",
+    "fde",
+    "applied-ai"
+  ],
+  "scripts": {
+    "smoke": "bun run src/smoke.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.95.1"
+  }
+}

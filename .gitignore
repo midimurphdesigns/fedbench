@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+bun.lockb
+
+# Build / runtime artifacts
+dist/
+out/
+build/
+*.tsbuildinfo
+*.tgz
+
+# Environment / secrets — keep .env.example only
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Caches / coverage / logs
+.cache/
+.eslintcache
+.turbo/
+coverage/
+*.lcov
+logs/
+*.log
+
+# Eval / observability outputs (large, local-only)
+.promptfoo/
+phoenix.db
+*.duckdb
+traces/
+cache/
+
+# Local PDFs that shouldn't be committed (corpus is sourced via script)
+corpus/raw/*.pdf
+!corpus/raw/.gitkeep
+
+# Editor / OS
+.vscode/
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.swp
+*~
