@@ -35,6 +35,9 @@ cache/
 corpus/raw/*.pdf
 !corpus/raw/.gitkeep
 
+# Derived text caches from PDFs (regenerable from corpus/raw/)
+.corpus-cache/
+
 # Editor / OS
 .vscode/
 !.vscode/extensions.json
