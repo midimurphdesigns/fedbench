@@ -4,13 +4,13 @@ This file tracks the hand-verification status of each ground-truth Q&A pair in `
 
 ## v0.1 target: 15 verified pairs
 
-The full draft set is 30 pairs in `questions.jsonl`. For v0.1, the eval ships with the first 15 verified — a smaller but trustworthy set that can be expanded later. Composition:
+The eval set ships with 15 hand-verified pairs. Composition:
 
-- **12 in-corpus pairs** (`in-001` through `in-015`, picking the cleanest 12)
+- **12 in-corpus pairs** (`in-001` through `in-011`, plus `in-014`)
 - **3 out-of-corpus pairs** (`ooc-001`, `ooc-002`, `ooc-008`)
 - **Total: 15 pairs**
 
-The remaining 15 drafted pairs stay in `questions.jsonl` with `draftStatus: "needs-verification"`; they're available for v0.2 expansion but are NOT scored against.
+`questions.jsonl` contains exactly these 15 entries, no more.
 
 ## Already verified
 
@@ -118,20 +118,14 @@ The source-quote excerpts are pulled from the parsed PDF text to speed verificat
 
 ## Summary
 
-After the 7 above are verified, the v0.1 eval set is:
+Once the 7 above are verified, all 15 entries in `questions.jsonl` are `verified` and the eval set is ready to score against.
 
-- **12 in-corpus** (in-001 to in-011, in-014, in-015 — wait, that's 13)
-
-Correction: the 12 in-corpus are `in-001`, `in-002`, `in-003`, `in-004`, `in-005`, `in-006`, `in-007`, `in-008` (already verified) + `in-009`, `in-010`, `in-011`, `in-014` (verifying now). That's 12.
-
-- **3 out-of-corpus** (ooc-001, ooc-002, ooc-008)
-- **Total: 15 pairs ready to score against**
-
-The remaining 15 drafted pairs (in-012, in-013, in-015, in-016 through in-022, ooc-003 through ooc-007) keep `draftStatus: "needs-verification"` and are not scored against in v0.1. They're queued for v0.2 expansion.
+- **12 in-corpus:** `in-001` through `in-011`, plus `in-014`
+- **3 out-of-corpus:** `ooc-001`, `ooc-002`, `ooc-008`
 
 ## After you verify
 
-1. For each accepted pair: change its `draftStatus` in `questions.jsonl` from `"needs-verification"` to `"verified"`.
+1. For each accepted pair: change its `draftStatus` in `questions.jsonl` from `"needs-verification"` to `"verified"` and add `"verifiedBy": "kevinmurphy@source-pdf"`.
 2. For any edited pair: apply the edit inline in `questions.jsonl` and mark `"verified"`.
-3. For any rejected pair: leave `"needs-verification"` and add a `"rejectionReason"` field, OR substitute another pair from the unverified queue.
-4. Update the README's "Project status" line to note the eval-set count.
+3. For any rejected pair: remove the entry from `questions.jsonl` entirely, then either replace it (re-draft against the same source page) or accept a smaller eval set.
+4. Update the README's "Project status" line to note the final eval-set count.
