@@ -22,6 +22,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import type { Chunk } from "../corpus/chunk.ts";
 import { getCorpusPaths, DEFAULT_CORPUS, activateCorpus } from "../corpus/paths.ts";
+import type { Retriever } from "./index.ts";
 
 let _chunksPath = getCorpusPaths(DEFAULT_CORPUS).chunksPath;
 
@@ -74,6 +75,17 @@ type IndexedChunk = {
 export type RetrievalResult = {
   chunk: Chunk;
   score: number;
+};
+
+/**
+ * Concrete BM25 retriever conforming to the shared Retriever interface.
+ * Identical behavior to the bare `search()` function below — wrapping
+ * exists so the eval can hold a single Retriever reference and compare
+ * implementations without branching on a string.
+ */
+export const bm25Retriever: Retriever = {
+  name: "bm25",
+  search: (query: string, topK?: number) => search(query, topK),
 };
 
 let _index: {
