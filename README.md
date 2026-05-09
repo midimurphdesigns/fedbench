@@ -94,6 +94,10 @@ Known limits: the third fallback rung (open-weights via OpenRouter) is documente
 
 See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the full module breakdown.
 
+## Companion project
+
+[`fieldops-mcp`](https://github.com/midimurphdesigns/fieldops-mcp) is the sibling artifact: an MCP server that exposes a small-business field-services workflow as agent tools. fedbench measures *whether the model is right*; fieldops-mcp shapes *what the model can do*.
+
 ## License
 
 MIT — see [`LICENSE`](./LICENSE).
