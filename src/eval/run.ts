@@ -30,6 +30,12 @@ import { setCorpus } from "../retrieval/bm25.ts";
 import { getCorpusPaths, resolveCorpusFromArgv } from "../corpus/paths.ts";
 import { checkCitation } from "./citation-check.ts";
 import { judgeAnswer, type JudgeResult } from "./judge.ts";
+import {
+  createLiveStore,
+  createReplayStore,
+  getRecordingPath,
+  type RecordingStore,
+} from "./recording.ts";
 
 type EvalPair = {
   id: string;
@@ -72,9 +78,15 @@ function percentile(values: number[], p: number): number {
   return sorted[idx] ?? 0;
 }
 
-async function evaluatePair(pair: EvalPair, corpusId: string): Promise<EvalRow> {
+async function evaluatePair(
+  pair: EvalPair,
+  corpusId: string,
+  store: RecordingStore,
+): Promise<EvalRow> {
   const domain = getDomain(corpusId);
-  const agent = await answerQuestion(pair.question, { domain });
+  const agent = await store.getAgent(pair.id, () =>
+    answerQuestion(pair.question, { domain }),
+  );
 
   // OOC pairs: only refusal matters.
   if (!pair.inCorpus) {
@@ -122,12 +134,15 @@ async function evaluatePair(pair: EvalPair, corpusId: string): Promise<EvalRow> 
 
   let judge: JudgeResult | null = null;
   if (layer1.status === "pass" || layer1.status === "skip") {
+    const claimedCitation = agent.claimedCitation;
     try {
-      judge = await judgeAnswer({
-        question: pair.question,
-        answer: agent.answer,
-        citation: agent.claimedCitation,
-      });
+      judge = await store.getJudge(pair.id, () =>
+        judgeAnswer({
+          question: pair.question,
+          answer: agent.answer,
+          citation: claimedCitation,
+        }),
+      );
     } catch (err) {
       // Don't let a judge failure mask a working citation check.
       console.error(`  judge error for ${pair.id}: ${(err as Error).message}`);
@@ -165,7 +180,15 @@ async function evaluatePair(pair: EvalPair, corpusId: string): Promise<EvalRow> 
 }
 
 async function main(): Promise<void> {
-  const corpusId = resolveCorpusFromArgv(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  const corpusId = resolveCorpusFromArgv(argv);
+  const replay = argv.includes("--replay");
+  const record = argv.includes("--record");
+  if (replay && record) {
+    console.error("--replay and --record are mutually exclusive");
+    process.exit(2);
+  }
+
   const paths = getCorpusPaths(corpusId);
   setCorpus(corpusId);
 
@@ -176,14 +199,23 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  const recordingPath = getRecordingPath(corpusId);
+  const store: RecordingStore = replay
+    ? createReplayStore(recordingPath)
+    : createLiveStore(record ? recordingPath : null);
+
+  const mode = replay ? "replay" : record ? "live + record" : "live";
   console.log("─────────────────────────────────────────────────────");
-  console.log(`fedbench eval [${corpusId}] — ${eligible.length} verified pairs`);
+  console.log(`fedbench eval [${corpusId}, ${mode}] — ${eligible.length} verified pairs`);
+  if (replay) {
+    console.log(`  reading recording from ${recordingPath}`);
+  }
   console.log("─────────────────────────────────────────────────────\n");
 
   const rows: EvalRow[] = [];
   for (const pair of eligible) {
     process.stdout.write(`  ${pair.id} ... `);
-    const row = await evaluatePair(pair, corpusId);
+    const row = await evaluatePair(pair, corpusId, store);
     rows.push(row);
     const flag = row.passed ? "✓" : "✗";
     const judgeStr = row.judge ? ` judge=${row.judge.verdict}` : "";
@@ -237,6 +269,8 @@ async function main(): Promise<void> {
 
   const passed = rows.filter((r) => r.passed).length;
   console.log(`Result: ${passed} / ${rows.length} pairs passed`);
+
+  store.finalize();
 
   if (passed < rows.length) {
     console.log("✗ Eval failed — see per-pair output above for details.");

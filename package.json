@@ -35,6 +35,8 @@
     "corpus:parse": "python3 scripts/parse-pdfs.py",
     "corpus:chunk": "bun run src/corpus/chunk.ts",
     "eval": "bun run src/eval/run.ts",
+    "eval:record": "bun run src/eval/run.ts --record",
+    "eval:replay": "bun run src/eval/run.ts --replay",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
