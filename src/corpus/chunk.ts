@@ -23,7 +23,8 @@
  */
 
 import { resolve } from "node:path";
-import { existsSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, readdirSync, mkdirSync } from "node:fs";
+import { getCorpusPaths, resolveCorpusFromArgv } from "./paths.ts";
 
 export type Chunk = {
   chunkId: string;
@@ -31,10 +32,6 @@ export type Chunk = {
   page: number;
   text: string;
 };
-
-const ROOT = resolve(import.meta.dir, "..", "..");
-const CACHE_DIR = resolve(ROOT, ".corpus-cache");
-const CHUNKS_PATH = resolve(CACHE_DIR, "chunks.jsonl");
 
 const TARGET_WORDS_PER_CHUNK = 600;
 
@@ -80,8 +77,8 @@ function chunkPageText(text: string): string[] {
   return chunks;
 }
 
-function loadParsedDocument(documentId: string): Map<number, string> | null {
-  const path = resolve(CACHE_DIR, `${documentId}.txt`);
+function loadParsedDocument(documentId: string, cacheDir: string): Map<number, string> | null {
+  const path = resolve(cacheDir, `${documentId}.txt`);
   if (!existsSync(path)) return null;
   const raw = readFileSync(path, "utf8");
   const pages = new Map<number, string>();
@@ -94,24 +91,25 @@ function loadParsedDocument(documentId: string): Map<number, string> | null {
   return pages;
 }
 
-function discoverParsedDocuments(): string[] {
-  if (!existsSync(CACHE_DIR)) return [];
-  return readdirSync(CACHE_DIR)
+function discoverParsedDocuments(cacheDir: string): string[] {
+  if (!existsSync(cacheDir)) return [];
+  return readdirSync(cacheDir)
     .filter((name) => name.endsWith(".txt"))
     .map((name) => name.replace(/\.txt$/, ""));
 }
 
-export function buildChunks(): Chunk[] {
-  const docs = discoverParsedDocuments();
+export function buildChunks(cacheDir?: string): Chunk[] {
+  const dir = cacheDir ?? getCorpusPaths().cacheDir;
+  const docs = discoverParsedDocuments(dir);
   if (docs.length === 0) {
     throw new Error(
-      "no parsed text in .corpus-cache/. Run the corpus-parse step first.",
+      `no parsed text in ${dir}. Run the corpus-parse step first.`,
     );
   }
 
   const chunks: Chunk[] = [];
   for (const docId of docs) {
-    const pages = loadParsedDocument(docId);
+    const pages = loadParsedDocument(docId, dir);
     if (!pages) continue;
     for (const [pageNum, pageText] of pages) {
       const pageChunks = chunkPageText(pageText).filter(
@@ -131,11 +129,15 @@ export function buildChunks(): Chunk[] {
 }
 
 function main(): void {
-  const chunks = buildChunks();
+  const corpusId = resolveCorpusFromArgv(process.argv.slice(2));
+  const paths = getCorpusPaths(corpusId);
+  mkdirSync(paths.cacheDir, { recursive: true });
+
+  const chunks = buildChunks(paths.cacheDir);
   const lines = chunks.map((c) => JSON.stringify(c)).join("\n") + "\n";
-  writeFileSync(CHUNKS_PATH, lines);
+  writeFileSync(paths.chunksPath, lines);
   const docs = new Set(chunks.map((c) => c.document));
-  console.log(`✓ wrote ${chunks.length} chunks across ${docs.size} documents → ${CHUNKS_PATH}`);
+  console.log(`✓ [${corpusId}] wrote ${chunks.length} chunks across ${docs.size} documents → ${paths.chunksPath}`);
   // Distribution: chunks per doc
   const byDoc = new Map<string, number>();
   for (const c of chunks) byDoc.set(c.document, (byDoc.get(c.document) ?? 0) + 1);

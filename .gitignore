@@ -31,8 +31,11 @@ phoenix.db
 traces/
 cache/
 
-# Local PDFs that shouldn't be committed (corpus is sourced via script)
+# Local PDFs that shouldn't be committed (corpus is sourced via script).
+# Match both the legacy single-corpus layout (corpus/raw/*.pdf) and
+# the namespaced multi-corpus layout (corpus/raw/<id>/*.pdf).
 corpus/raw/*.pdf
+corpus/raw/**/*.pdf
 !corpus/raw/.gitkeep
 
 # Derived text caches from PDFs (regenerable from corpus/raw/)

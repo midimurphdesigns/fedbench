@@ -23,9 +23,11 @@
  * latency.
  */
 
-import { resolve } from "node:path";
 import { readFileSync } from "node:fs";
 import { answerQuestion, type AgentAnswer } from "../agent/answer.ts";
+import { getDomain } from "../agent/domain.ts";
+import { setCorpus } from "../retrieval/bm25.ts";
+import { getCorpusPaths, resolveCorpusFromArgv } from "../corpus/paths.ts";
 import { checkCitation } from "./citation-check.ts";
 import { judgeAnswer, type JudgeResult } from "./judge.ts";
 
@@ -38,11 +40,8 @@ type EvalPair = {
   draftStatus: string;
 };
 
-const ROOT = resolve(import.meta.dir, "..", "..");
-const QUESTIONS_PATH = resolve(ROOT, "eval", "questions.jsonl");
-
-function loadQuestions(): EvalPair[] {
-  const raw = readFileSync(QUESTIONS_PATH, "utf8");
+function loadQuestions(questionsPath: string): EvalPair[] {
+  const raw = readFileSync(questionsPath, "utf8");
   const out: EvalPair[] = [];
   for (const line of raw.split("\n")) {
     const trimmed = line.trim();
@@ -73,8 +72,9 @@ function percentile(values: number[], p: number): number {
   return sorted[idx] ?? 0;
 }
 
-async function evaluatePair(pair: EvalPair): Promise<EvalRow> {
-  const agent = await answerQuestion(pair.question);
+async function evaluatePair(pair: EvalPair, corpusId: string): Promise<EvalRow> {
+  const domain = getDomain(corpusId);
+  const agent = await answerQuestion(pair.question, { domain });
 
   // OOC pairs: only refusal matters.
   if (!pair.inCorpus) {
@@ -165,21 +165,25 @@ async function evaluatePair(pair: EvalPair): Promise<EvalRow> {
 }
 
 async function main(): Promise<void> {
-  const pairs = loadQuestions();
+  const corpusId = resolveCorpusFromArgv(process.argv.slice(2));
+  const paths = getCorpusPaths(corpusId);
+  setCorpus(corpusId);
+
+  const pairs = loadQuestions(paths.questionsPath);
   const eligible = pairs.filter((p) => p.draftStatus === "verified");
   if (eligible.length === 0) {
-    console.error("no verified pairs in eval/questions.jsonl");
+    console.error(`no verified pairs in ${paths.questionsPath}`);
     process.exit(1);
   }
 
   console.log("─────────────────────────────────────────────────────");
-  console.log(`fedbench eval — ${eligible.length} verified pairs`);
+  console.log(`fedbench eval [${corpusId}] — ${eligible.length} verified pairs`);
   console.log("─────────────────────────────────────────────────────\n");
 
   const rows: EvalRow[] = [];
   for (const pair of eligible) {
     process.stdout.write(`  ${pair.id} ... `);
-    const row = await evaluatePair(pair);
+    const row = await evaluatePair(pair, corpusId);
     rows.push(row);
     const flag = row.passed ? "✓" : "✗";
     const judgeStr = row.judge ? ` judge=${row.judge.verdict}` : "";

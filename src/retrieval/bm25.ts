@@ -19,12 +19,23 @@
  * Standard Robertson values. Adjustable if retrieval quality lags.
  */
 
-import { resolve } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 import type { Chunk } from "../corpus/chunk.ts";
+import { getCorpusPaths, DEFAULT_CORPUS } from "../corpus/paths.ts";
 
-const ROOT = resolve(import.meta.dir, "..", "..");
-const CHUNKS_PATH = resolve(ROOT, ".corpus-cache", "chunks.jsonl");
+let _chunksPath = getCorpusPaths(DEFAULT_CORPUS).chunksPath;
+
+/**
+ * Switch the active corpus for retrieval. Resets the cached BM25 index
+ * so the next search() call reads from the new corpus's chunks.jsonl.
+ * Idempotent — calling with the current corpus is a no-op.
+ */
+export function setCorpus(id: string): void {
+  const next = getCorpusPaths(id).chunksPath;
+  if (next === _chunksPath) return;
+  _chunksPath = next;
+  _index = null;
+}
 
 const K1 = 1.5;
 const B = 0.75;
@@ -70,12 +81,12 @@ let _index: {
 } | null = null;
 
 function loadChunks(): Chunk[] {
-  if (!existsSync(CHUNKS_PATH)) {
+  if (!existsSync(_chunksPath)) {
     throw new Error(
-      `no chunks at ${CHUNKS_PATH}. Run: bun run corpus:chunk`,
+      `no chunks at ${_chunksPath}. Run: bun run corpus:chunk`,
     );
   }
-  const raw = readFileSync(CHUNKS_PATH, "utf8");
+  const raw = readFileSync(_chunksPath, "utf8");
   const out: Chunk[] = [];
   for (const line of raw.split("\n")) {
     const trimmed = line.trim();

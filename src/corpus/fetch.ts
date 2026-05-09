@@ -12,6 +12,7 @@
 
 import { resolve } from "node:path";
 import { mkdir, readFile, writeFile, stat } from "node:fs/promises";
+import { getCorpusPaths, resolveCorpusFromArgv } from "./paths.ts";
 
 type CorpusDocument = {
   id: string;
@@ -28,9 +29,9 @@ type Manifest = {
   documents: CorpusDocument[];
 };
 
-const ROOT = resolve(import.meta.dir, "..", "..");
-const RAW_DIR = resolve(ROOT, "corpus", "raw");
-const MANIFEST_PATH = resolve(ROOT, "corpus", "sources.json");
+// Per-run corpus selection happens inside main() so the script reads
+// argv before resolving paths. RAW_DIR / MANIFEST_PATH live on the
+// resolved CorpusPaths now.
 
 // Same UA used during initial sourcing — some publisher CDNs reject
 // curl-shaped User-Agent strings. This is browser-shaped, not a forge.
@@ -58,8 +59,8 @@ async function fileMatches(path: string, expected: string): Promise<boolean> {
   return actual === expected;
 }
 
-async function fetchDocument(doc: CorpusDocument): Promise<{ ok: true } | { ok: false; reason: string }> {
-  const dest = resolve(RAW_DIR, doc.filename);
+async function fetchDocument(doc: CorpusDocument, rawDir: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const dest = resolve(rawDir, doc.filename);
 
   if (await fileMatches(dest, doc.sha256)) {
     console.log(`  ✓ ${doc.id} — already present and verified`);
@@ -94,18 +95,20 @@ async function fetchDocument(doc: CorpusDocument): Promise<{ ok: true } | { ok: 
 }
 
 async function main(): Promise<void> {
-  await mkdir(RAW_DIR, { recursive: true });
+  const corpusId = resolveCorpusFromArgv(process.argv.slice(2));
+  const paths = getCorpusPaths(corpusId);
+  await mkdir(paths.rawDir, { recursive: true });
 
-  const manifestText = await readFile(MANIFEST_PATH, "utf8");
+  const manifestText = await readFile(paths.manifest, "utf8");
   const manifest = JSON.parse(manifestText) as Manifest;
 
-  console.log(`fedbench corpus — ${manifest.documents.length} documents`);
+  console.log(`fedbench corpus [${corpusId}] — ${manifest.documents.length} documents`);
   console.log("─────────────────────────────────────────────────────");
 
   const failures: Array<{ id: string; reason: string }> = [];
 
   for (const doc of manifest.documents) {
-    const result = await fetchDocument(doc);
+    const result = await fetchDocument(doc, paths.rawDir);
     if (!result.ok) {
       failures.push({ id: doc.id, reason: result.reason });
     }
