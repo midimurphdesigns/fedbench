@@ -16,27 +16,29 @@ These failures are invisible during demo testing and visible only at scale, in t
 
 ## What it does
 
-Given a corpus of public policy PDFs (Social Security program guides, Medicare publications, state benefits handbooks, etc.) and a set of verified ground-truth Q&A pairs, `fedbench` runs a grounded-Q&A agent against the corpus and produces structured metrics on three axes:
+Given a corpus of public policy PDFs and a set of verified ground-truth Q&A pairs, `fedbench` runs a grounded-Q&A agent against the corpus and produces structured metrics on three axes:
 
-- **Citation accuracy.** Does every factual claim cite a real page/section that contains the claim?
-- **Refusal discipline.** When the answer isn't in the corpus, does the agent refuse instead of guessing?
-- **Cost and latency.** Token spend per query, p50/p95 latency, viability of cheaper fallback models.
+- **Citation accuracy.** Does every factual claim cite a real page that contains the claim? Checked deterministically — the agent's claimed citation has to match an actual chunk of the parsed corpus.
+- **Citation faithfulness.** Even if the page exists, does it actually support the answer? A stronger model (Opus 4.7) judges the agent's output against the cited evidence — never the same model grading itself.
+- **Refusal discipline.** When the answer isn't in the corpus, does the agent refuse or fabricate? Tested with a held-out set of out-of-corpus questions.
 
-The harness is provider-agnostic at the call site, MCP-based for tool use, and self-hosted end-to-end (no SaaS account required to fork and run).
+Cost in dollars and tokens, p50/p95 latency, and which rung of the fallback ladder produced each answer are first-class outputs alongside correctness.
+
+The harness ships with two side-by-side public corpora (Medicare and OSHA) so the comparison "same agent, different domain language shape" is built in. Adding your own corpus is a config change. Self-hosted end-to-end — no SaaS account required to fork and run.
 
 ## Stack
 
-| Layer                | Choice                                                                | Why                                                                          |
-| -------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| Runtime              | [Bun](https://bun.com)                                                | Fast, native TypeScript, no transpile step                                   |
-| Language             | TypeScript (strict)                                                   | Type discipline carries through to prompt and eval schemas                   |
-| Primary LLM          | Anthropic Claude (Sonnet 4.6)                                         | Strong instruction-following and citation grounding                          |
-| Fallback LLM         | Anthropic Claude (Haiku 4.5)                                          | ~5× cheaper, ~2× faster — viable for non-critical paths                      |
-| Cross-check LLM      | OpenAI GPT-class                                                      | Independent provider for cross-evaluation; detects single-vendor blind spots |
-| Tool protocol        | [MCP](https://modelcontextprotocol.io/)                               | Anthropic-introduced standard for agent tool use                             |
-| Eval framework       | [Promptfoo](https://github.com/promptfoo/promptfoo)                   | CI-native LLM evaluation; used in production at OpenAI and Anthropic         |
-| Trace observability  | [Arize Phoenix](https://github.com/Arize-ai/phoenix)                  | Open-source, self-hosted LLM trace observability                             |
-| RAG retrieval        | TBD                                                                   | Likely pgvector locally; faiss optional                                      |
+| Layer               | Choice                                                              | Why                                                                                              |
+| ------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Runtime             | [Bun](https://bun.com)                                              | Fast, native TypeScript, no transpile step                                                       |
+| Language            | TypeScript (strict)                                                 | Type discipline carries through to prompt and eval schemas                                       |
+| Agent LLM (primary) | Anthropic Claude (Sonnet 4.6)                                       | Strong instruction-following and citation grounding                                              |
+| Agent LLM (fallback)| Anthropic Claude (Haiku 4.5)                                        | ~5× cheaper, ~2× faster — viable when primary rate-limits or errors                              |
+| Judge LLM           | Anthropic Claude (Opus 4.7)                                         | Stronger model than the agent — never the same model grading itself                              |
+| PDF parser          | [pypdf](https://pypi.org/project/pypdf/)                            | One-shot text extraction during corpus setup; not in the eval hot path                           |
+| Retrieval           | BM25 (zero-dep, in-repo)                                            | Short factual queries are dominated by literal vocabulary — the failure mode embeddings solve for is not the failure mode this domain has |
+| Test runner         | `bun:test`                                                          | Bundled with Bun; no Jest/Vitest dependency                                                      |
+| CI                  | GitHub Actions                                                      | Typecheck + unit tests on every push; full eval is workflow_dispatch only                        |
 
 ## Getting started
 
@@ -48,8 +50,11 @@ bun install
 cp .env.example .env
 # edit .env — at minimum, set ANTHROPIC_API_KEY
 
-# Fetch the corpus (public federal benefits PDFs, checksum-verified)
+# Fetch the corpus (public federal PDFs, checksum-verified)
 bun run corpus:fetch
+
+# Parse the PDFs into per-page text (uses pypdf — needs python3 + pip install pypdf)
+bun run corpus:parse
 
 # Build the chunk index for retrieval
 bun run corpus:chunk
@@ -61,11 +66,25 @@ bun run smoke
 bun run eval
 ```
 
-## Corpus
+The default corpus is Medicare. To run on OSHA instead, append `--corpus osha` to each step (`corpus:fetch`, `corpus:parse`, `corpus:chunk`, `eval`). Adding your own corpus is documented below.
 
-The corpus is three public-domain federal benefits publications, defined in [`corpus/sources.json`](./corpus/sources.json). Documents are works of the US federal government and not subject to copyright (17 USC §105). Each entry pins a URL and a SHA-256 checksum so a fork can verify it received exactly the same bytes the eval was run against.
+## Corpora
 
-The fetcher (`bun run corpus:fetch`) is idempotent: a file already on disk with the right checksum is left alone. If a publisher updates a document, the checksum mismatch fails loud rather than silently changing the eval baseline.
+fedbench ships with two public-domain federal corpora, both works of the US federal government and not subject to copyright (17 USC §105):
+
+- **Medicare** (default) — three CMS publications: the *Medicare & You* handbook, *Your Medicare Benefits*, and *Your Guide to Medicare Prescription Drug Coverage*. Defined in [`corpus/sources.json`](./corpus/sources.json). Prose-heavy benefits-policy language, dense numeric facts.
+- **OSHA** — three OSHA workplace-safety publications: *Personal Protective Equipment* (3151), *How to Plan for Workplace Emergencies and Evacuations* (3088), and *Medical Screening and Surveillance Requirements in OSHA Standards* (3162). Defined in [`corpus/sources.osha.json`](./corpus/sources.osha.json). Procedural language, planning checklists, equipment-and-rule statements.
+
+Each manifest entry pins a URL and a SHA-256 checksum so a fork can verify it received exactly the same bytes the eval was run against. The fetcher (`bun run corpus:fetch [--corpus <id>]`) is idempotent: a file already on disk with the right checksum is left alone. If a publisher updates a document, the checksum mismatch fails loud rather than silently changing the eval baseline.
+
+### Adding your own corpus
+
+1. Drop a manifest at `corpus/sources.<id>.json` with the same shape as the existing ones (URL + SHA-256 + scope per document).
+2. Author a Q&A set at `eval/questions.<id>.jsonl`. Verify each citation against the source — the convention is `verifiedBy: "<your-handle>@source-pdf"`.
+3. Add a `DomainConfig` entry to `src/agent/domain.ts` so the system prompt's domain-flavored language matches.
+4. Run the four steps above with `--corpus <id>`.
+
+Both shipped corpora live in the repo as fully-worked references.
 
 ## Documentation
 
@@ -78,19 +97,32 @@ Project docs live in [`docs/`](./docs):
 
 ## Project status
 
-End-to-end eval pipeline is working. The agent retrieves chunks via BM25, prompts Claude through a fallback ladder (Sonnet 4.6 primary → Haiku 4.5 fallback) with strict citation rules, and produces grounded answers. The harness scores those answers through two layers: deterministic citation-existence checks against the parsed corpus, and Claude Opus 4.7 as the LLM-as-judge for citation faithfulness. Refusal discipline is checked separately on out-of-corpus questions.
+End-to-end eval pipeline is working across two domains. The agent retrieves chunks via BM25, prompts Claude through a fallback ladder (Sonnet 4.6 primary → Haiku 4.5 fallback) with strict citation rules, and produces grounded answers. The harness scores those answers through two layers: deterministic citation-existence checks against the parsed corpus, and Claude Opus 4.7 as the LLM-as-judge for citation faithfulness. Refusal discipline is checked separately on out-of-corpus questions.
 
-Current measurements against the v0.1 eval set (11 pairs: 8 in-corpus + 3 out-of-corpus):
+### v0.3 measurements (Medicare vs OSHA, same agent + same judge + same scoring rules)
 
-- **Citation accuracy:** 8/8 in-corpus answers cite a real, verifiable page
-- **Citation faithfulness:** 6 faithful + 2 partially-faithful (judge flagged minor omitted qualifiers) + 0 unfaithful
-- **Refusal discipline:** 3/3 OOC questions correctly refused; 0/8 false refusals on in-corpus questions
-- **Cost:** ~$0.029 per pair end-to-end (agent ~$0.010 + judge ~$0.019)
-- **Latency:** agent p50 1.9s, p95 3.9s
+| Metric                          | Medicare (11 pairs) | OSHA (10 pairs)    |
+| ------------------------------- | ------------------- | ------------------ |
+| In-corpus citation pass         | 8/8                 | 5/8                |
+| In-corpus citation skip         | 0/8                 | 3/8                |
+| Judge: faithful                 | 6/8                 | 8/8                |
+| Judge: partially-faithful       | 2/8                 | 0/8                |
+| Judge: unfaithful               | 0/8                 | 0/8                |
+| OOC refusal rate                | 3/3                 | 2/2                |
+| In-corpus false refusal rate    | 0/8                 | 0/8                |
+| Cost per pair (agent + judge)   | ~$0.029             | ~$0.024            |
+| Agent latency p50 / p95         | 2159ms / 4191ms     | 2044ms / 2453ms    |
+| Eval verdict                    | 11/11 pairs pass    | 10/10 pairs pass   |
 
-The agent reports which fallback rung produced each answer, with full provenance for any earlier rungs that failed. CI runs typecheck and unit tests on every push (44 tests, ~177ms). The full eval suite is runnable locally and on manual workflow_dispatch.
+The Medicare-vs-OSHA skip-rate gap (0% vs 37.5% for Layer 1 deterministic citation-check) is the empirical "different domain shape, different signal" story: number-dense Medicare answers lean on Layer 1; procedural OSHA answers ("one warden per 20 employees", "10 or fewer employees may communicate orally") have less for the regex extractor to grab and defer to Layer 2's LLM judge instead. Both layers earn their keep — neither alone would catch what the other does. See [`docs/DESIGN_NOTES.md`](./docs/DESIGN_NOTES.md) for the full discussion.
 
-Known limits: the third fallback rung (open-weights via OpenRouter) is documented in [`docs/DESIGN_NOTES.md`](./docs/DESIGN_NOTES.md) but not yet wired (v0.3). The judge currently flags "partially-faithful" for cases where the agent's stated facts are correct but it omitted a hedging qualifier ("most people pay" / "may pay"); a future judge prompt should distinguish "wrong fact" from "omitted hedge" and weight them differently.
+The agent reports which fallback rung produced each answer, with full provenance for any earlier rungs that failed. CI runs typecheck and unit tests on every push (72 tests, ~180ms). The full eval suite is runnable locally and on manual workflow_dispatch.
+
+### Known limits
+
+- The third fallback rung (open-weights via OpenRouter) is documented in [`docs/DESIGN_NOTES.md`](./docs/DESIGN_NOTES.md) but not yet wired.
+- The hybrid retriever (`src/retrieval/hybrid.ts`) ships as a structural seam only — it currently delegates to BM25. A real BM25-plus-lexical-rerank pipeline is a v0.4+ item, deliberately not built speculatively until measurement justifies it.
+- The judge currently flags "partially-faithful" for cases where the agent's stated facts are correct but it omitted a hedging qualifier ("most people pay" / "may pay"); a future judge prompt should distinguish "wrong fact" from "omitted hedge" and weight them differently.
 
 See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the full module breakdown.
 

@@ -88,6 +88,23 @@ The cascade rule is conservative: only true provider-side failures (429, 5xx, ne
 
 The agent reports which rung answered + any earlier rungs that failed. This provenance is structured: a future analysis can correlate "answers that came from Haiku because Sonnet rate-limited" against eval verdicts and detect whether the fallback rung is degrading quality measurably.
 
+## Why a second domain (OSHA), and what it taught us
+
+v0.3 added a second corpus — three public OSHA workplace-safety publications — alongside the original Medicare one. The point wasn't to broaden the harness's claim ("works on more domains!"); it was to test whether a *single* harness, with the same agent, the same retrieval strategy, the same judge, and the same scoring rules, holds up when the underlying language shape changes.
+
+Medicare publications are prose-heavy benefits policy: long sentences, hedging qualifiers ("most people pay", "in some cases"), dense numeric facts ($202.90 premium, $1,736 deductible, 7-month enrollment window). OSHA publications are procedural: planning checklists, equipment-and-rule statements, ratios ("one warden per every 20 employees"), thresholds ("3 to 4 minutes", "10 or fewer employees"). Different surface, different retrieval signal.
+
+What the side-by-side run actually showed:
+
+- **The harness generalized cleanly.** Medicare 11/11 pairs pass, OSHA 10/10 pairs pass. Same agent, same judge, same scoring gate. Adding a second domain was a config change (`corpus/sources.osha.json`, `eval/questions.osha.jsonl`) and one prompt parameter (`DomainConfig`), not a fork.
+- **Layer 1 (deterministic citation-check) is proportionally less load-bearing on procedural domains.** Medicare in-corpus pairs hit 8/8 token-match passes (0 skips). OSHA hit 5/8 token-match passes (3 skips — answers like "one warden per 20 employees" or "10 or fewer employees may communicate the plan orally" don't have the dollar/percent/period tokens the regex extractor looks for, so they defer to the judge).
+- **Layer 2 (LLM-as-judge) was cleaner on OSHA than on Medicare.** Medicare: 6/8 faithful + 2/8 partially-faithful (the partials are cases where the agent dropped a hedging qualifier present in the source). OSHA: 8/8 faithful — OSHA's source language is more direct ("must", "shall", "every X"), so there's less hedging to drop.
+- **Cost and latency were comparable.** ~$0.024/pair on OSHA vs ~$0.029/pair on Medicare; OSHA's smaller documents produce shorter prompts and slightly faster generations.
+
+The lesson: a one-domain harness lets you show that an eval pipeline *can* run end-to-end. A two-domain harness lets you show that *the same pipeline* responds usefully to different language shapes — and that the per-layer contribution shifts when the domain shifts. That second observation is the one a hiring manager actually wants from an eval engineer.
+
+A v0.4 expansion adding hybrid retrieval would let the harness measure whether OSHA's higher Layer 1 skip rate corresponds to a real retrieval gap. The seam is in (`src/retrieval/index.ts`, `Retriever` interface) but the implementation is deliberately deferred until measurement justifies it.
+
 ## Why no LLM-generated ground truth
 
 LLM-generated ground truth contaminates the eval loop. If an LLM writes the "correct" answer, then another LLM is being scored against an LLM's output — not against the document. Drift in either model gets attributed to drift in the system; failure modes that affect both models cancel out invisibly.
