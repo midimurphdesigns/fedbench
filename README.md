@@ -42,31 +42,46 @@ The harness ships with two side-by-side public corpora (Medicare and OSHA) so th
 
 ## Getting started
 
+### Demo it in 30 seconds (no API key required)
+
 ```bash
-# Install dependencies
+git clone https://github.com/midimurphdesigns/fedbench.git
+cd fedbench
 bun install
 
-# Configure your API keys
+# Replay the eval against recorded agent + judge outputs.
+bun run eval:replay --corpus medicare
+bun run eval:replay --corpus osha
+```
+
+Each replay finishes in well under a second and prints the same per-pair report, comparison numbers, and pass/fail verdict as a live run. The recordings live at [`eval/recordings/`](./eval/recordings/) and were captured by running the live eval against this repo's exact codebase. They're versioned alongside the eval set, so a Q&A change that hasn't been re-recorded fails loudly rather than silently producing wrong numbers.
+
+### Run it for real (Anthropic API key required)
+
+```bash
+# Configure your API key
 cp .env.example .env
-# edit .env — at minimum, set ANTHROPIC_API_KEY
+# edit .env — set ANTHROPIC_API_KEY
 
 # Fetch the corpus (public federal PDFs, checksum-verified)
 bun run corpus:fetch
 
-# Parse the PDFs into per-page text (uses pypdf — needs python3 + pip install pypdf)
+# Parse the PDFs into per-page text (needs python3 + pip install pypdf)
 bun run corpus:parse
 
 # Build the chunk index for retrieval
 bun run corpus:chunk
 
-# Run the smoke test against the Anthropic API
+# Sanity-check the API connection
 bun run smoke
 
 # Run the full evaluation suite (agent + retrieval + judge)
 bun run eval
 ```
 
-The default corpus is Medicare. To run on OSHA instead, append `--corpus osha` to each step (`corpus:fetch`, `corpus:parse`, `corpus:chunk`, `eval`). Adding your own corpus is documented below.
+To run on OSHA instead of Medicare, append `--corpus osha` to each of the four steps. Adding your own corpus is documented below.
+
+To capture a new recording for the no-key demo path, run `bun run eval:record --corpus <id>` — that's the live eval plus a JSONL dump.
 
 ## Corpora
 
