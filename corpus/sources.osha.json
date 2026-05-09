@@ -1,0 +1,36 @@
+{
+  "$schema": "./sources.schema.json",
+  "description": "Public-domain OSHA workplace-safety publications that make up the OSHA corpus for fedbench. All documents are works of the US federal government and not subject to copyright (17 USC §105). Each entry pins a URL and a SHA-256 checksum so a fork can verify it received exactly the same bytes the eval was run against. Chosen to give a retrieval profile distinct from the Medicare corpus — procedural and list-heavy rather than prose-heavy, with concrete equipment, planning, and screening requirements rather than benefits policy.",
+  "documents": [
+    {
+      "id": "osha-personal-protective-equipment",
+      "title": "Personal Protective Equipment",
+      "publisher": "Occupational Safety and Health Administration (OSHA)",
+      "url": "https://www.osha.gov/Publications/OSHA3151.pdf",
+      "sha256": "1d6cf79ee848af930b952d20bcf33d62b5094f4580ab52f126dfb841091d8d70",
+      "filename": "osha-personal-protective-equipment.pdf",
+      "bytes": 572471,
+      "scope": "OSHA 3151-02R (2023). Employer responsibilities for hazard assessment and PPE selection — eye, face, head, foot, hand, hearing, respiratory protection. Reference for the equipment-and-rule shape of OSHA standards. Concrete, list-heavy retrieval target."
+    },
+    {
+      "id": "osha-workplace-emergencies-evacuations",
+      "title": "How to Plan for Workplace Emergencies and Evacuations",
+      "publisher": "Occupational Safety and Health Administration (OSHA)",
+      "url": "https://www.osha.gov/Publications/OSHA3088.pdf",
+      "sha256": "f01d011b0b1cc22cf3344c1b0d63fd52d028f742b6c55aa1c2760e33fc8a9c62",
+      "filename": "osha-workplace-emergencies-evacuations.pdf",
+      "bytes": 1614102,
+      "scope": "OSHA 3088 (2001, revised). Emergency Action Plan (EAP) requirements, evacuation routes, alarm systems, employee training, and post-evacuation accounting. Heavy on planning checklists — strongest retrieval contrast with the Medicare corpus's prose-heavy benefits language."
+    },
+    {
+      "id": "osha-medical-screening-surveillance",
+      "title": "Medical Screening and Surveillance Requirements in OSHA Standards: A Guide",
+      "publisher": "Occupational Safety and Health Administration (OSHA)",
+      "url": "https://www.osha.gov/Publications/OSHA3162.pdf",
+      "sha256": "3fd4cd7444ba6013db534772ec74e8b57962b6953c1bb2927d9bb1f6e7b6a679",
+      "filename": "osha-medical-screening-surveillance.pdf",
+      "bytes": 1460152,
+      "scope": "OSHA 3162-01R (2014). When OSHA standards require medical exams, surveillance schedules, exposure-trigger thresholds (e.g., asbestos, lead, benzene). Bridges occupational-safety procedural language to a healthcare-adjacent vocabulary, useful for testing whether retrieval generalizes across federal-policy domains."
+    }
+  ]
+}
