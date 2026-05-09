@@ -51,6 +51,26 @@ export function resolveCorpusFromArgv(argv: readonly string[]): string {
   return process.env[DEFAULT_CORPUS_ENV] ?? DEFAULT_CORPUS;
 }
 
+/**
+ * Process-wide active corpus, set by `activateCorpus(id)`. Modules
+ * that need cache access mid-run (BM25, citation-check, judge) read
+ * from `getActiveCorpusPaths()` rather than recomputing from a CLI
+ * arg they don't see.
+ */
+let _activeCorpusId: string = DEFAULT_CORPUS;
+
+export function activateCorpus(id: string): void {
+  _activeCorpusId = id;
+}
+
+export function getActiveCorpusId(): string {
+  return _activeCorpusId;
+}
+
+export function getActiveCorpusPaths(): CorpusPaths {
+  return getCorpusPaths(_activeCorpusId);
+}
+
 export function getCorpusPaths(id: string = DEFAULT_CORPUS): CorpusPaths {
   // Legacy Medicare layout: keep working without forcing a re-shuffle
   // of files that the v0.2 release pinned to disk.

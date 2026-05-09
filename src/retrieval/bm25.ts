@@ -21,16 +21,19 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import type { Chunk } from "../corpus/chunk.ts";
-import { getCorpusPaths, DEFAULT_CORPUS } from "../corpus/paths.ts";
+import { getCorpusPaths, DEFAULT_CORPUS, activateCorpus } from "../corpus/paths.ts";
 
 let _chunksPath = getCorpusPaths(DEFAULT_CORPUS).chunksPath;
 
 /**
- * Switch the active corpus for retrieval. Resets the cached BM25 index
- * so the next search() call reads from the new corpus's chunks.jsonl.
- * Idempotent — calling with the current corpus is a no-op.
+ * Switch the active corpus for retrieval AND for the per-process active-
+ * corpus state that the citation-check + judge layers also read from.
+ * Resets the cached BM25 index so the next search() call reads from the
+ * new corpus's chunks.jsonl. Idempotent — calling with the current
+ * corpus is a no-op.
  */
 export function setCorpus(id: string): void {
+  activateCorpus(id);
   const next = getCorpusPaths(id).chunksPath;
   if (next === _chunksPath) return;
   _chunksPath = next;

@@ -41,6 +41,11 @@ corpus/raw/**/*.pdf
 # Derived text caches from PDFs (regenerable from corpus/raw/)
 .corpus-cache/
 
+# Private planning notes (drafts, eval-result captures, scratch).
+# Public docs live in docs/ — .planning/ is for working material that
+# shouldn't ship.
+.planning/
+
 # Editor / OS
 .vscode/
 !.vscode/extensions.json

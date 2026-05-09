@@ -20,6 +20,7 @@
 
 import { resolve } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
+import { getActiveCorpusPaths } from "../corpus/paths.ts";
 
 export type Citation = {
   document: string;
@@ -31,16 +32,13 @@ export type CitationCheckResult =
   | { status: "fail"; reason: string; missingTokens?: string[] }
   | { status: "skip"; reason: string };
 
-const ROOT = resolve(import.meta.dir, "..", "..");
-const CACHE_DIR = resolve(ROOT, ".corpus-cache");
-
 const pageTextCache = new Map<string, Map<number, string>>();
 
 function loadDocumentPages(documentId: string): Map<number, string> | null {
   const cached = pageTextCache.get(documentId);
   if (cached) return cached;
 
-  const path = resolve(CACHE_DIR, `${documentId}.txt`);
+  const path = resolve(getActiveCorpusPaths().cacheDir, `${documentId}.txt`);
   if (!existsSync(path)) return null;
 
   const raw = readFileSync(path, "utf8");

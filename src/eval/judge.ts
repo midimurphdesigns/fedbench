@@ -20,6 +20,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { resolve } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
+import { getActiveCorpusPaths } from "../corpus/paths.ts";
 
 export type JudgeVerdict = "faithful" | "partially-faithful" | "unfaithful";
 
@@ -31,8 +32,8 @@ export type JudgeResult = {
   latencyMs: number;
 };
 
-const ROOT = resolve(import.meta.dir, "..", "..");
-const CACHE_DIR = resolve(ROOT, ".corpus-cache");
+// Active-corpus cache dir is resolved per-call via getActiveCorpusPaths()
+// so the judge tracks the same corpus the eval runner activated.
 
 // Sonnet 4.6 prices: $3 / MTok input, $15 / MTok output (as of writing).
 // Claude Opus 4.7 (1M ctx): used for the judge — stronger reasoning at
@@ -66,7 +67,7 @@ explain your reasoning; just return the JSON.
 `.trim();
 
 function loadPageText(documentId: string, page: number): string | null {
-  const path = resolve(CACHE_DIR, `${documentId}.txt`);
+  const path = resolve(getActiveCorpusPaths().cacheDir, `${documentId}.txt`);
   if (!existsSync(path)) return null;
   const raw = readFileSync(path, "utf8");
   const sections = raw.split(/=== PAGE (\d+) ===/);
