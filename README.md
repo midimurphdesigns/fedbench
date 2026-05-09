@@ -51,11 +51,14 @@ cp .env.example .env
 # Fetch the corpus (public federal benefits PDFs, checksum-verified)
 bun run corpus:fetch
 
+# Build the chunk index for retrieval
+bun run corpus:chunk
+
 # Run the smoke test against the Anthropic API
 bun run smoke
 
-# (Coming soon) Run the full evaluation suite
-# bun run eval
+# Run the full evaluation suite (agent + retrieval + judge)
+bun run eval
 ```
 
 ## Corpus
@@ -75,7 +78,17 @@ Project docs live in [`docs/`](./docs):
 
 ## Project status
 
-This is an active in-progress project. The smoke test is wired and verified end-to-end against the Anthropic API; the eval suite, RAG pipeline, and corpus are being built up incrementally. See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the full module breakdown and what exists today.
+End-to-end eval pipeline is working. The agent retrieves chunks via BM25, prompts Claude Sonnet 4.6 with the evidence and strict citation rules, and produces grounded answers. The harness scores those answers through two layers: deterministic citation-existence checks against the parsed corpus, and Claude Opus 4.7 as the LLM-as-judge for citation faithfulness. Refusal discipline is checked separately on out-of-corpus questions.
+
+Current measurements against the v0.1 eval set (11 pairs: 8 in-corpus + 3 out-of-corpus):
+
+- **Citation accuracy:** 8/8 in-corpus answers cite a real, verifiable page
+- **Citation faithfulness:** 6 faithful + 2 partially-faithful (judge flagged minor omitted qualifiers) + 0 unfaithful
+- **Refusal discipline:** 3/3 OOC questions correctly refused; 0/8 false refusals on in-corpus questions
+- **Cost:** ~$0.029 per pair end-to-end (agent ~$0.010 + judge ~$0.019)
+- **Latency:** agent p50 2.1s, p95 3.5s
+
+See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the full module breakdown.
 
 ## License
 

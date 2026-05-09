@@ -1,31 +1,31 @@
 /**
- * Eval runner — orchestrates the layered evaluation.
+ * Eval runner — invokes the agent on every question, scores its outputs.
  *
  *   bun run eval
  *
  * For each Q&A pair in eval/questions.jsonl:
- *   1. Layer 1: deterministic citation-existence check (no LLM, free).
- *      Validates that the ground-truth answer's load-bearing tokens
- *      actually appear on the cited page. Catches typos in the ground
- *      truth itself and corpus drift.
- *   2. Layer 2: LLM-as-judge faithfulness scoring (only on in-corpus
- *      pairs that pass Layer 1). The judge sees the cited chunk as
- *      evidence and scores the ground-truth answer for faithfulness.
- *   3. For OOC pairs: skip Layers 1 and 2; refusal-discipline is scored
- *      against the agent's response, not the ground-truth answer.
+ *   1. Run the agent (BM25 retrieval + Claude grounded-answer). Capture
+ *      its answer, claimed citation, and refusal flag.
+ *   2. For in-corpus pairs:
+ *        - Layer 1 (deterministic): does the agent's claimed citation
+ *          page actually contain the load-bearing tokens of the agent's
+ *          answer?
+ *        - Layer 2 (LLM-as-judge): does the cited chunk semantically
+ *          support the agent's claim?
+ *        - Refusal correctness: did the agent answer (correct) or refuse
+ *          (false-refusal, fail)?
+ *   3. For out-of-corpus pairs:
+ *        - Refusal correctness: did the agent refuse (correct) or did it
+ *          fabricate an answer (fail)?
  *
- * NOTE: this runner currently scores GROUND TRUTH against the corpus
- * (sanity-checking the eval set itself). Once the agent + retrieval
- * layer is wired (steps 4-5), the runner will additionally score the
- * AGENT's outputs and report metrics: citation accuracy %, faithful %,
- * cost per pair, p50/p95 latency.
- *
- * Cost: ~$0.01 per pair at Opus pricing for Layer 2 only.
- * Layer 1 is free; OOC pairs skip Layer 2 entirely.
+ * Aggregates: citation accuracy %, faithful %, refusal rate on OOC,
+ * false-refusal rate on in-corpus, total cost (agent + judge), p50/p95
+ * latency.
  */
 
 import { resolve } from "node:path";
 import { readFileSync } from "node:fs";
+import { answerQuestion, type AgentAnswer } from "../agent/answer.ts";
 import { checkCitation } from "./citation-check.ts";
 import { judgeAnswer, type JudgeResult } from "./judge.ts";
 
@@ -36,7 +36,6 @@ type EvalPair = {
   expectedAnswer: string;
   citation?: { document: string; page: number };
   draftStatus: string;
-  verifiedBy?: string;
 };
 
 const ROOT = resolve(import.meta.dir, "..", "..");
@@ -53,141 +52,190 @@ function loadQuestions(): EvalPair[] {
   return out;
 }
 
-type RunRow = {
-  id: string;
-  inCorpus: boolean;
+type EvalRow = {
+  pair: EvalPair;
+  agent: AgentAnswer;
   citationCheck: "pass" | "fail" | "skip" | "n/a";
   citationDetail: string;
-  judge?: JudgeResult;
+  judge: JudgeResult | null;
+  refusalCorrect: boolean;
+  passed: boolean;
 };
 
 function fmtUSD(n: number): string {
   return `$${n.toFixed(6)}`;
 }
 
+function percentile(values: number[], p: number): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const idx = Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length));
+  return sorted[idx] ?? 0;
+}
+
+async function evaluatePair(pair: EvalPair): Promise<EvalRow> {
+  const agent = await answerQuestion(pair.question);
+
+  // OOC pairs: only refusal matters.
+  if (!pair.inCorpus) {
+    const refusalCorrect = agent.refused;
+    return {
+      pair,
+      agent,
+      citationCheck: "n/a",
+      citationDetail: "OOC; refusal-only scoring",
+      judge: null,
+      refusalCorrect,
+      passed: refusalCorrect,
+    };
+  }
+
+  // In-corpus pair where the agent refused: false-refusal failure.
+  if (agent.refused) {
+    return {
+      pair,
+      agent,
+      citationCheck: "n/a",
+      citationDetail: "agent refused on an in-corpus question (false refusal)",
+      judge: null,
+      refusalCorrect: false,
+      passed: false,
+    };
+  }
+
+  // In-corpus, agent answered. Need a citation claim to score against.
+  if (!agent.claimedCitation) {
+    return {
+      pair,
+      agent,
+      citationCheck: "fail",
+      citationDetail: "agent answered but did not produce a parseable citation",
+      judge: null,
+      refusalCorrect: true,
+      passed: false,
+    };
+  }
+
+  // Layer 1: deterministic citation check on the AGENT's answer +
+  // AGENT's claimed citation page.
+  const layer1 = checkCitation(agent.claimedCitation, agent.answer);
+
+  let judge: JudgeResult | null = null;
+  if (layer1.status === "pass" || layer1.status === "skip") {
+    try {
+      judge = await judgeAnswer({
+        question: pair.question,
+        answer: agent.answer,
+        citation: agent.claimedCitation,
+      });
+    } catch (err) {
+      // Don't let a judge failure mask a working citation check.
+      console.error(`  judge error for ${pair.id}: ${(err as Error).message}`);
+    }
+  }
+
+  const citationDetail =
+    layer1.status === "pass"
+      ? `${layer1.matchedTokens.length} tokens matched on p.${agent.claimedCitation.page}`
+      : layer1.status === "fail"
+        ? layer1.reason
+        : layer1.reason;
+
+  // Pass criteria:
+  //  - Layer 1 (citation existence) passes OR skips (skip = no extractable
+  //    deterministic tokens, defer to judge)
+  //  - Layer 2 (judge) does not return "unfaithful". "partially-faithful"
+  //    verdicts (omitted hedging qualifiers, minor inferences) are
+  //    surfaced for human sample-audit but don't fail the gate — at v0.1,
+  //    they're judge-strictness signal, not agent-failure signal.
+  //  - Layer 1 outright fail = always a fail (made-up citation page).
+  const layer1OK = layer1.status === "pass" || layer1.status === "skip";
+  const judgeOK = judge === null || judge.verdict !== "unfaithful";
+  const passed = layer1OK && judgeOK;
+
+  return {
+    pair,
+    agent,
+    citationCheck: layer1.status,
+    citationDetail,
+    judge,
+    refusalCorrect: true,
+    passed,
+  };
+}
+
 async function main(): Promise<void> {
   const pairs = loadQuestions();
   const eligible = pairs.filter((p) => p.draftStatus === "verified");
   if (eligible.length === 0) {
-    console.error("No verified pairs in eval/questions.jsonl. Aborting.");
+    console.error("no verified pairs in eval/questions.jsonl");
     process.exit(1);
   }
 
   console.log("─────────────────────────────────────────────────────");
   console.log(`fedbench eval — ${eligible.length} verified pairs`);
-  console.log("─────────────────────────────────────────────────────");
+  console.log("─────────────────────────────────────────────────────\n");
 
-  const rows: RunRow[] = [];
-  let totalCost = 0;
-  let totalLatency = 0;
-  let layer2Calls = 0;
-
+  const rows: EvalRow[] = [];
   for (const pair of eligible) {
-    if (!pair.inCorpus) {
-      // OOC pairs don't have a citation to check or an answer to judge
-      // against the corpus — refusal-discipline scoring happens against
-      // the agent's response in a later step (not yet implemented here).
-      rows.push({
-        id: pair.id,
-        inCorpus: false,
-        citationCheck: "n/a",
-        citationDetail: "OOC pair; refusal-discipline scoring deferred to agent run",
-      });
-      continue;
-    }
-
-    if (!pair.citation) {
-      rows.push({
-        id: pair.id,
-        inCorpus: true,
-        citationCheck: "fail",
-        citationDetail: "in-corpus pair has no citation",
-      });
-      continue;
-    }
-
-    const layer1 = checkCitation(pair.citation, pair.expectedAnswer);
-    const row: RunRow = {
-      id: pair.id,
-      inCorpus: true,
-      citationCheck: layer1.status,
-      citationDetail:
-        layer1.status === "pass"
-          ? `${layer1.matchedTokens.length} tokens matched`
-          : layer1.status === "fail"
-            ? layer1.reason
-            : layer1.reason,
-    };
-
-    if (layer1.status === "pass") {
-      try {
-        const verdict = await judgeAnswer({
-          question: pair.question,
-          answer: pair.expectedAnswer,
-          citation: pair.citation,
-        });
-        row.judge = verdict;
-        totalCost += verdict.costUSD;
-        totalLatency += verdict.latencyMs;
-        layer2Calls += 1;
-      } catch (err) {
-        row.citationDetail += ` | judge error: ${(err as Error).message}`;
-      }
-    }
-
+    process.stdout.write(`  ${pair.id} ... `);
+    const row = await evaluatePair(pair);
     rows.push(row);
-  }
-
-  // Print report
-  console.log();
-  for (const row of rows) {
-    const flag =
-      row.citationCheck === "pass"
-        ? "✓"
-        : row.citationCheck === "fail"
-          ? "✗"
-          : row.citationCheck === "skip"
-            ? "·"
-            : "—";
-    const judgeStr = row.judge
-      ? `  judge=${row.judge.verdict.padEnd(20)} ${fmtUSD(row.judge.costUSD)}  ${row.judge.latencyMs}ms`
-      : "";
-    console.log(`  ${flag} ${row.id.padEnd(8)} ${row.citationDetail}${judgeStr}`);
-    if (row.judge) {
-      console.log(`           ${row.judge.rationale}`);
+    const flag = row.passed ? "✓" : "✗";
+    const judgeStr = row.judge ? ` judge=${row.judge.verdict}` : "";
+    const refusalStr = row.pair.inCorpus ? "" : ` refused=${row.agent.refused}`;
+    console.log(`${flag} ${row.citationDetail}${judgeStr}${refusalStr}`);
+    if (row.agent.refused && !row.pair.inCorpus) {
+      // Good refusal — no further detail needed.
+    } else if (!row.pair.inCorpus) {
+      console.log(`         AGENT ANSWERED (should have refused): ${row.agent.answer.slice(0, 120)}`);
+    } else if (row.judge) {
+      console.log(`         ${row.judge.rationale}`);
     }
   }
 
   // Aggregates
   console.log();
   console.log("─────────────────────────────────────────────────────");
-  const inCorpusRows = rows.filter((r) => r.inCorpus);
-  const oocRows = rows.filter((r) => !r.inCorpus);
-  const passing = inCorpusRows.filter((r) => r.citationCheck === "pass").length;
-  const failing = inCorpusRows.filter((r) => r.citationCheck === "fail").length;
-  const skipped = inCorpusRows.filter((r) => r.citationCheck === "skip").length;
-  const faithful = rows.filter((r) => r.judge?.verdict === "faithful").length;
-  const partial = rows.filter((r) => r.judge?.verdict === "partially-faithful").length;
-  const unfaithful = rows.filter((r) => r.judge?.verdict === "unfaithful").length;
+  const inCorpus = rows.filter((r) => r.pair.inCorpus);
+  const ooc = rows.filter((r) => !r.pair.inCorpus);
 
-  console.log(`In-corpus pairs: ${inCorpusRows.length}`);
-  console.log(`  citation existence: ${passing} pass / ${failing} fail / ${skipped} skip`);
-  console.log(`  judge verdict:      ${faithful} faithful / ${partial} partial / ${unfaithful} unfaithful`);
-  console.log(`OOC pairs: ${oocRows.length}  (refusal scoring runs against agent output, not here)`);
+  const citationPass = inCorpus.filter((r) => r.citationCheck === "pass").length;
+  const citationFail = inCorpus.filter((r) => r.citationCheck === "fail").length;
+  const citationSkip = inCorpus.filter((r) => r.citationCheck === "skip").length;
+
+  const judgeFaithful = inCorpus.filter((r) => r.judge?.verdict === "faithful").length;
+  const judgePartial = inCorpus.filter((r) => r.judge?.verdict === "partially-faithful").length;
+  const judgeUnfaithful = inCorpus.filter((r) => r.judge?.verdict === "unfaithful").length;
+
+  const inCorpusFalseRefusal = inCorpus.filter((r) => r.agent.refused).length;
+  const oocCorrectRefusal = ooc.filter((r) => r.agent.refused).length;
+
+  const totalAgentCost = rows.reduce((s, r) => s + r.agent.costUSD, 0);
+  const totalJudgeCost = rows.reduce((s, r) => s + (r.judge?.costUSD ?? 0), 0);
+  const agentLatencies = rows.map((r) => r.agent.latencyMs).filter((l) => l > 0);
+
+  console.log(`In-corpus pairs:    ${inCorpus.length}`);
+  console.log(`  citation existence: ${citationPass} pass / ${citationFail} fail / ${citationSkip} skip`);
+  console.log(`  judge verdict:      ${judgeFaithful} faithful / ${judgePartial} partial / ${judgeUnfaithful} unfaithful`);
+  console.log(`  false refusal:      ${inCorpusFalseRefusal} / ${inCorpus.length}`);
   console.log();
-  console.log(`Layer 2 (judge) calls: ${layer2Calls}`);
-  console.log(`Layer 2 total cost:    ${fmtUSD(totalCost)}`);
-  console.log(`Layer 2 total latency: ${totalLatency}ms`);
-  if (layer2Calls > 0) {
-    console.log(
-      `Layer 2 avg per pair:  ${fmtUSD(totalCost / layer2Calls)} / ${Math.round(totalLatency / layer2Calls)}ms`,
-    );
-  }
+  console.log(`OOC pairs:          ${ooc.length}`);
+  console.log(`  refusal rate:     ${oocCorrectRefusal} / ${ooc.length}`);
+  console.log();
+  console.log(`Cost (agent):       ${fmtUSD(totalAgentCost)}`);
+  console.log(`Cost (judge):       ${fmtUSD(totalJudgeCost)}`);
+  console.log(`Cost (total):       ${fmtUSD(totalAgentCost + totalJudgeCost)}`);
+  console.log();
+  console.log(`Agent latency p50:  ${percentile(agentLatencies, 50)}ms`);
+  console.log(`Agent latency p95:  ${percentile(agentLatencies, 95)}ms`);
   console.log("─────────────────────────────────────────────────────");
 
-  // Pass/fail gate
-  if (failing > 0 || unfaithful > 0) {
-    console.error("✗ Eval failed: citation-check or judge surfaced unfaithful pairs.");
+  const passed = rows.filter((r) => r.passed).length;
+  console.log(`Result: ${passed} / ${rows.length} pairs passed`);
+
+  if (passed < rows.length) {
+    console.log("✗ Eval failed — see per-pair output above for details.");
     process.exit(1);
   }
   console.log("✓ Eval passed.");
