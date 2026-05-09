@@ -48,12 +48,21 @@ bun install
 cp .env.example .env
 # edit .env — at minimum, set ANTHROPIC_API_KEY
 
-# Run the smoke test
+# Fetch the corpus (public federal benefits PDFs, checksum-verified)
+bun run corpus:fetch
+
+# Run the smoke test against the Anthropic API
 bun run smoke
 
 # (Coming soon) Run the full evaluation suite
 # bun run eval
 ```
+
+## Corpus
+
+The corpus is three public-domain federal benefits publications, defined in [`corpus/sources.json`](./corpus/sources.json). Documents are works of the US federal government and not subject to copyright (17 USC §105). Each entry pins a URL and a SHA-256 checksum so a fork can verify it received exactly the same bytes the eval was run against.
+
+The fetcher (`bun run corpus:fetch`) is idempotent: a file already on disk with the right checksum is left alone. If a publisher updates a document, the checksum mismatch fails loud rather than silently changing the eval baseline.
 
 ## Documentation
 

@@ -31,6 +31,7 @@
   ],
   "scripts": {
     "smoke": "bun run src/smoke.ts",
+    "corpus:fetch": "bun run src/corpus/fetch.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

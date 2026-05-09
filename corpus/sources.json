@@ -1,0 +1,36 @@
+{
+  "$schema": "./sources.schema.json",
+  "description": "Public-domain federal benefits publications that make up the fedbench corpus. All documents are works of the US federal government and not subject to copyright (17 USC §105). Each entry pins a URL and a SHA-256 checksum so a fork can verify it received exactly the same bytes the eval was run against.",
+  "documents": [
+    {
+      "id": "medicare-and-you",
+      "title": "Medicare & You — The Official U.S. Government Medicare Handbook",
+      "publisher": "Centers for Medicare & Medicaid Services (CMS)",
+      "url": "https://www.medicare.gov/Pubs/pdf/10050-medicare-and-you.pdf",
+      "sha256": "0ecf8292dd5b6799c31e8472b1ef2f8d51fd61925d7b9e3ad70408e979c05cd1",
+      "filename": "medicare-and-you.pdf",
+      "bytes": 4070025,
+      "scope": "Flagship Medicare handbook. Covers eligibility, enrollment timing, Parts A/B/C/D, premiums, coverage details, and rights/protections. The breadth makes it the primary corpus document; many caseworker questions resolve here."
+    },
+    {
+      "id": "your-medicare-benefits",
+      "title": "Your Medicare Benefits",
+      "publisher": "Centers for Medicare & Medicaid Services (CMS)",
+      "url": "https://www.medicare.gov/Pubs/pdf/10116-Your-Medicare-Benefits.pdf",
+      "sha256": "86ac6c5735b5ff466a73d7de42010e1aa7ff93c09c3316abb839ce356665bed4",
+      "filename": "your-medicare-benefits.pdf",
+      "bytes": 1417557,
+      "scope": "What's covered, what's not, and the cost-sharing structure for specific services. Narrower focus than the main handbook. Useful retrieval-distinguishing test: questions that read like they belong here vs. in Medicare & You."
+    },
+    {
+      "id": "medicare-prescription-drug-coverage",
+      "title": "Your Guide to Medicare Prescription Drug Coverage",
+      "publisher": "Centers for Medicare & Medicaid Services (CMS)",
+      "url": "https://www.medicare.gov/Pubs/pdf/11109-Your-Guide-to-Medicare-Prescription-Drug-Coverage.pdf",
+      "sha256": "48c882800cfc5e8ddc3f21829ad033dfdf5f423a1b1085b64dae791bc0ef06a0",
+      "filename": "medicare-prescription-drug-coverage.pdf",
+      "bytes": 4061760,
+      "scope": "Part D specifically — drug plans, formularies, coverage gap, Extra Help / Low Income Subsidy. Distinct enough from the others to test cross-document retrieval."
+    }
+  ]
+}

@@ -51,7 +51,11 @@ Owns the prompt template, the system prompt, the call-site provider abstraction,
 
 ### `src/corpus/`
 
-Owns the PDF source list, fetcher (with checksum verification), parser, and chunker. The corpus is built reproducibly: anyone forking the repo runs `bun run corpus:fetch` and gets the same documents. Citation index maps every chunk to a source page and section so retrieved evidence can be cited back to a verifiable location.
+Owns the PDF source list, fetcher (with checksum verification), parser, and chunker. The corpus is built reproducibly: anyone forking the repo runs `bun run corpus:fetch` and gets the same documents.
+
+The source manifest lives at [`corpus/sources.json`](../corpus/sources.json) — each entry pins a URL, a SHA-256 checksum, and a short description of the document's scope. The fetcher (`src/corpus/fetch.ts`) refuses to accept any file whose hash does not match the manifest; an upstream document change fails loud and forces a deliberate manifest update rather than silently shifting the eval baseline.
+
+Citation index maps every chunk back to a source document, page, and (where available) section heading, so retrieved evidence can be cited back to a verifiable location.
 
 ### `src/retrieval/`
 
