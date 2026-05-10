@@ -4,6 +4,8 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
+**Live demo:** [fedbench.kevinmurphywebdev.com](https://fedbench.kevinmurphywebdev.com) — replay viewer over the 21 verified Q&A pairs, no signup or keys.
+
 ## The problem
 
 LLM agents that answer questions over a document corpus fail in three distinctive ways:
