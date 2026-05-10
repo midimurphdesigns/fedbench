@@ -39,7 +39,30 @@ export default function Page() {
 
       <QuestionExplorer rows={rows} />
 
-      <footer className="mt-16 pt-8 border-t border-white/10 text-xs text-[rgb(var(--muted))]">
+      <section className="mt-16 pt-8 border-t border-white/10">
+        <h2 className="text-base font-semibold mb-3">Run it locally on your own corpus</h2>
+        <p className="text-xs leading-5 text-[rgb(var(--muted))] max-w-prose mb-4">
+          The hosted viewer replays the verified Q&amp;A set. To run the full eval (BM25 retrieval +
+          Sonnet 4.6 agent + Opus 4.7 judge) against your own questions, clone the repo and add an
+          Anthropic API key. Each eval run costs about $0.025/pair.
+        </p>
+        <pre className="text-[11px] leading-5 p-3 border border-white/10 bg-white/[0.02] overflow-x-auto">
+{`git clone https://github.com/midimurphdesigns/fedbench.git
+cd fedbench
+bun install
+cp .env.example .env       # add ANTHROPIC_API_KEY
+bun run eval               # runs all 21 pairs, scores them
+bun run eval:replay        # replays the recorded run, no key needed`}
+        </pre>
+        <p className="text-xs leading-5 text-[rgb(var(--muted))] max-w-prose mt-4">
+          To swap in your own corpus: drop PDFs into <code>corpus/raw/</code>, run{" "}
+          <code>bun run corpus:fetch</code> + <code>bun run corpus:chunk</code>, then write your
+          Q&amp;A pairs into <code>eval/questions.jsonl</code>. The harness scores hallucination,
+          citation accuracy, and refusal discipline as first-class metrics.
+        </p>
+      </section>
+
+      <footer className="mt-12 pt-8 border-t border-white/10 text-xs text-[rgb(var(--muted))]">
         Replay viewer over recorded eval runs — no API keys, no model calls. Real outputs from
         Sonnet 4.6 (agent) and Opus 4.7 (judge), captured during{" "}
         <code>bun run eval --record</code>.
