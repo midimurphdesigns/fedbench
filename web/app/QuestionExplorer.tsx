@@ -1,14 +1,15 @@
 "use client";
 
 import * as React from "react";
-import { CheckCircle2, FileQuestion, Filter, ShieldAlert, XCircle } from "lucide-react";
+import { motion } from "framer-motion";
+import { CheckCircle2, Filter, ShieldAlert, XCircle } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Eyebrow } from "@/components/ui/eyebrow";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import type { EvalRow } from "@/lib/data";
 import { cn } from "@/lib/utils";
 
@@ -180,19 +181,34 @@ function QuestionListItem({
         type="button"
         onClick={onSelect}
         className={cn(
-          "block w-full text-left p-2 transition-colors border-l-2",
+          "relative block w-full text-left p-2 transition-colors",
           selected
-            ? "bg-white/5 border-[var(--color-primary)]"
-            : "border-transparent hover:bg-white/5 hover:border-white/20",
+            ? "bg-[var(--color-primary)]/[0.06]"
+            : "hover:bg-white/[0.03]",
         )}
       >
+        {selected && (
+          <motion.span
+            layoutId="question-active-rail"
+            aria-hidden
+            className="absolute left-0 top-1 bottom-1 w-[2px] bg-[var(--color-primary)]"
+            transition={{ type: "spring", stiffness: 400, damping: 30 }}
+          />
+        )}
         <div className="flex items-center justify-between gap-2 mb-1">
           <span className="font-mono text-[10px] text-[var(--color-muted-foreground)]">
             {row.pair.id} · {row.pair.corpus}
           </span>
           {badge}
         </div>
-        <p className="text-xs leading-snug line-clamp-2">{row.pair.question}</p>
+        <p
+          className={cn(
+            "text-xs leading-snug line-clamp-2",
+            selected ? "text-[var(--color-foreground)]" : "text-[var(--color-muted-foreground)]",
+          )}
+        >
+          {row.pair.question}
+        </p>
       </button>
     </li>
   );
@@ -226,87 +242,82 @@ function RecordView({ row }: { row: EvalRow }) {
         </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <FileQuestion className="size-4 text-[var(--color-primary)]" />
-            <h3 className="text-sm font-semibold">Question</h3>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <p className="text-sm leading-6">{pair.question}</p>
-          {pair.expectedAnswer && pair.inCorpus && (
-            <p className="text-xs text-[var(--color-muted-foreground)] leading-5">
-              <span className="font-mono uppercase tracking-wider text-[10px] mr-2">expected</span>
-              {pair.expectedAnswer}
-            </p>
-          )}
-        </CardContent>
-      </Card>
+      {/* Question — promoted out of Card. The prompt should read like a quote, not a panel. */}
+      <section>
+        <p className="text-lg leading-snug tracking-tight">{pair.question}</p>
+        {pair.expectedAnswer && pair.inCorpus && (
+          <p className="mt-3 text-sm leading-6 text-[var(--color-muted-foreground)] border-l-2 border-[var(--color-border)] pl-3">
+            <span className="type-eyebrow mr-2">expected</span>
+            {pair.expectedAnswer}
+          </p>
+        )}
+      </section>
 
-      <Card>
-        <CardHeader>
-          <h3 className="text-sm font-semibold">BM25 retrieved chunks</h3>
-          <p className="text-[10px] font-mono uppercase tracking-wider text-[var(--color-muted-foreground)]">
+      {/* BM25 — bordered-top hairline, lowest weight of the triple */}
+      <section className="border-t border-[var(--color-border)] pt-5">
+        <div className="flex items-baseline justify-between mb-3">
+          <Eyebrow>BM25 retrieved chunks</Eyebrow>
+          <span className="type-eyebrow text-[var(--color-muted-foreground)]">
             top {Math.min(3, agent.retrievedChunks.length)} of {agent.retrievedChunks.length}
-          </p>
-        </CardHeader>
-        <CardContent>
-          <ol className="space-y-2">
-            {agent.retrievedChunks.slice(0, 3).map((rc, i) => (
-              <li key={i}>
-                <ChunkCard chunk={rc} />
-              </li>
-            ))}
-          </ol>
-        </CardContent>
-      </Card>
+          </span>
+        </div>
+        <ol className="space-y-2">
+          {agent.retrievedChunks.slice(0, 3).map((rc, i) => (
+            <li key={i}>
+              <ChunkCard chunk={rc} />
+            </li>
+          ))}
+        </ol>
+      </section>
 
-      <Card>
-        <CardHeader>
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-sm font-semibold">Agent answer</h3>
-            {agent.refused && <Badge variant="muted">refused</Badge>}
-          </div>
-          <p className="text-[10px] font-mono uppercase tracking-wider text-[var(--color-muted-foreground)]">
-            {agent.model}
-            {agent.rungName && ` · rung ${agent.rungName}`} · {agent.latencyMs}ms · $
-            {agent.costUSD.toFixed(4)}
-          </p>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className={cn("text-xs leading-5 whitespace-pre-wrap", agent.refused && "text-[var(--color-muted-foreground)] italic")}>
-            {agent.answer}
-          </p>
-          {agent.claimedCitation && (
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant={hasMismatch ? "warning" : "muted"}>
-                claimed · {agent.claimedCitation.document}, p{agent.claimedCitation.page}
+      {/* Agent answer — cyan left-edge accent. Medium weight. */}
+      <section className="relative border border-[var(--color-border)] border-l-2 border-l-[var(--color-primary)]/40 p-5">
+        <div className="flex flex-wrap items-center gap-2 mb-2">
+          <Eyebrow>Agent answer</Eyebrow>
+          {agent.refused && <Badge variant="muted">refused</Badge>}
+        </div>
+        <p
+          className={cn(
+            "text-sm leading-6 whitespace-pre-wrap",
+            agent.refused && "text-[var(--color-muted-foreground)] italic",
+          )}
+        >
+          {agent.answer}
+        </p>
+        <p className="mt-3 font-mono text-[11px] tabular-nums text-[var(--color-muted-foreground)]">
+          {agent.model}
+          {agent.rungName && ` · rung ${agent.rungName}`} · {agent.latencyMs}ms · $
+          {agent.costUSD.toFixed(4)}
+        </p>
+        {agent.claimedCitation && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Badge variant={hasMismatch ? "warning" : "muted"}>
+              claimed · {agent.claimedCitation.document}, p{agent.claimedCitation.page}
+            </Badge>
+            {pair.citation && (
+              <Badge variant="muted">
+                expected · {pair.citation.document}, p{pair.citation.page}
               </Badge>
-              {pair.citation && (
-                <Badge variant="muted">
-                  expected · {pair.citation.document}, p{pair.citation.page}
-                </Badge>
-              )}
-            </div>
-          )}
-          {hasMismatch && (
-            <Alert variant="warning">
-              <ShieldAlert className="size-4" />
-              <AlertDescription>
-                Claimed citation differs from the verified expected citation. Deterministic
-                citation-check would catch this before judge runs.
-              </AlertDescription>
-            </Alert>
-          )}
-        </CardContent>
-      </Card>
+            )}
+          </div>
+        )}
+        {hasMismatch && (
+          <Alert variant="warning" className="mt-3">
+            <ShieldAlert className="size-4" />
+            <AlertDescription>
+              Claimed citation differs from the verified expected citation. Deterministic
+              citation-check would catch this before judge runs.
+            </AlertDescription>
+          </Alert>
+        )}
+      </section>
 
+      {/* Judge verdict — biggest heading, cyan-tinted Faithful. Highest weight of the triple. */}
       {judge && (
-        <Card>
-          <CardHeader>
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-sm font-semibold">LLM-as-judge</h3>
+        <section className="border-t border-[var(--color-border)] pt-5">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <div className="flex items-center gap-3">
+              <h3 className="text-xl tracking-tight">LLM-as-judge</h3>
               {judge.verdict === "faithful" ? (
                 <Badge variant="success">
                   <CheckCircle2 className="size-3" />
@@ -321,14 +332,12 @@ function RecordView({ row }: { row: EvalRow }) {
                 <Badge variant="warning">{judge.verdict}</Badge>
               )}
             </div>
-            <p className="text-[10px] font-mono uppercase tracking-wider text-[var(--color-muted-foreground)]">
+            <span className="font-mono text-[11px] tabular-nums text-[var(--color-muted-foreground)]">
               {judge.judgeModel} · {judge.latencyMs}ms · ${judge.costUSD.toFixed(4)}
-            </p>
-          </CardHeader>
-          <CardContent>
-            <p className="text-xs leading-5">{judge.rationale}</p>
-          </CardContent>
-        </Card>
+            </span>
+          </div>
+          <p className="text-sm leading-6 text-[var(--color-muted-foreground)]">{judge.rationale}</p>
+        </section>
       )}
     </article>
   );
